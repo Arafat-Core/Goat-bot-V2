@@ -1,118 +1,162 @@
 const axios = require("axios");
-const fs = require("fs");
 const ytSearch = require("yt-search");
-
-async function downloadFile(url, fileName) {
-  const response = (await axios.get(url, { responseType: "arraybuffer" })).data;
-  fs.writeFileSync(fileName, Buffer.from(response));
-  return fs.createReadStream(fileName);
-}
-
-async function getThumbnailStream(url) {
-  const response = await axios.get(url, { responseType: "stream" });
-  return response.data;
-}
 
 module.exports = {
   config: {
     name: "sing",
-    version: "4.1",
-    aliases: [],
+    version: "22.0",
     author: "Arafat",
     role: 0,
-    description: { en: "Music downloader" },
-    category: "media"
+    description: { en: "🎵 Premium Music Downloader" },
+    category: "audio"
   },
 
   onStart: async ({ api, args, event, commandName }) => {
-    const keyword = args.join(" ");
+
+    if (!args.length)
+      return api.sendMessage("🎵 Please type a song name.", event.threadID, event.messageID);
+
+    const isList = args[0] === "-l";
+    const keyword = isList ? args.slice(1).join(" ") : args.join(" ");
+
     if (!keyword)
-      return api.sendMessage("𝑷𝒍𝒆𝒂𝒔𝒆 𝒕𝒚𝒑𝒆 𝒂 𝒔𝒐𝒏𝒈 𝒏𝒂𝒎𝒆.", event.threadID, event.messageID);
+      return api.sendMessage("🎵 Please type a song name.", event.threadID, event.messageID);
 
     try {
-      const apiJson = await axios.get(
-        "https://raw.githubusercontent.com/Arafat-Core/cmds/refs/heads/main/api.json"
-      );
-      const BASE_API = apiJson.data.api;
-
-      const results = (await ytSearch(keyword)).videos.slice(0, 6);
-
-      if (!results.length)
-        return api.sendMessage("𝑵𝒐 𝒔𝒐𝒏𝒈𝒔 𝒇𝒐𝒖𝒏𝒅.", event.threadID, event.messageID);
-
-      let msg = "🎵 𝑺𝒐𝒏𝒈 𝑹𝒆𝒔𝒖𝒍𝒕𝒔:\n\n";
-      for (let i = 0; i < results.length; i++) {
-        const v = results[i];
-        msg += `✨ *${i + 1}.* 𝑻𝒊𝒕𝒍𝒆: ${v.title}\n⏳ 𝑫𝒖𝒓𝒂𝒕𝒊𝒐𝒏: ${v.timestamp}\n📺 𝑪𝒉𝒂𝒏𝒏𝒆𝒍: ${v.author.name}\n\n`;
+      let results = [];
+      try {
+        const searchResult = await ytSearch(keyword);
+        results = searchResult.videos.slice(0, 6);
+      } catch (err) {
+        console.log("YT-SEARCH ERROR:", err.message);
       }
 
-      const thumbs = await Promise.all(results.map(v => getThumbnailStream(v.thumbnail)));
+      if (!results.length)
+        return api.sendMessage("❌ No songs found.", event.threadID, event.messageID);
 
-      api.sendMessage(
+      if (isList) {
+        let text = "╭───────────────❍\n";
+        text += "│   🎵 𝑺𝒐𝒏𝒈 𝑳𝒊𝒔𝒕\n";
+        text += "╰───────────────❍\n\n";
+
+        for (let i = 0; i < results.length; i++) {
+          const v = results[i];
+          text += `╭─❍\n`;
+          text += `┊  ${i + 1}. ${v.title}\n`;
+          text += `┊  ⏳ ${v.timestamp || "Unknown"}\n`;
+          text += `┊  📺 ${v.author.name}\n`;
+          text += `╰───────────────❍\n\n`;
+        }
+
+        text += "╭───────────────❍\n";
+        text += "│   🔢 Reply with number (1–6)\n";
+        text += "╰───────────────❍";
+
+        return api.sendMessage(
+          { body: text },
+          event.threadID,
+          (err, info) => {
+            global.GoatBot.onReply.set(info.messageID, {
+              commandName,
+              messageID: info.messageID,
+              author: event.senderID,
+              results
+            });
+          },
+          event.messageID
+        );
+      }
+
+      const video = results[0];
+      const apiBase = String(global.GoatBot.config.Arafat?.api || "").trim();
+
+      if (!apiBase)
+        return api.sendMessage("❌ Error: API Base URL is empty!", event.threadID, event.messageID);
+
+      const finalURL = `${apiBase}/download/arafatadl?url=${encodeURIComponent(video.url)}`;
+
+      api.setMessageReaction("🌷", event.messageID, () => {}, true);
+
+      const res = await axios({
+        url: finalURL,
+        method: "GET",
+        responseType: "stream",
+        timeout: 0
+      });
+
+      if (res.status !== 200)
+        return api.sendMessage("❌ Download failed.", event.threadID, event.messageID);
+
+      await api.sendMessage(
         {
-          body: msg + "𝑹𝒆𝒑𝒍𝒚 𝒘𝒊𝒕𝒉 𝒂 𝒏𝒖𝒎𝒃𝒆𝒓 (1–6) 𝒕𝒐 𝒅𝒐𝒘𝒏𝒍𝒐𝒂𝒅.",
-          attachment: thumbs
+          body:
+`╭───────────────❍
+│ 🎧 𝑫𝒐𝒘𝒏𝒍𝒐𝒂𝒅 𝑺𝒖𝒄𝒄𝒆𝒔𝒔
+├───────────────❍
+│ 🎵 ${video.title}
+╰───────────────❍`,
+          attachment: res.data
         },
         event.threadID,
-        (err, info) => {
-          global.GoatBot.onReply.set(info.messageID, {
-            commandName,
-            messageID: info.messageID,
-            author: event.senderID,
-            results,
-            BASE_API
-          });
-        },
+        () => api.setMessageReaction("🎀", event.messageID, () => {}, true),
         event.messageID
       );
 
     } catch (err) {
-      api.sendMessage("𝑨𝒑𝒊 𝒍𝒐𝒂𝒅 𝒇𝒂𝒊𝒍𝒆𝒅.", event.threadID, event.messageID);
+      console.log("SING ERROR:", err.message);
+      api.sendMessage(`❌ Failed to fetch audio. Reason: ${err.message}`, event.threadID, event.messageID);
     }
   },
 
   onReply: async ({ event, api, Reply }) => {
     try {
-      const { results, BASE_API } = Reply;
-      const choice = parseInt(event.body);
+      const { results, author } = Reply;
+      if (event.senderID !== author) return;
 
+      const choice = parseInt(event.body);
       if (isNaN(choice) || choice < 1 || choice > results.length)
-        return api.sendMessage("𝑷𝒍𝒆𝒂𝒔𝒆 𝒆𝒏𝒕𝒆𝒓 𝒂 𝒗𝒂𝒍𝒊𝒅 𝒐𝒑𝒕𝒊𝒐𝒏 (1–6).", event.threadID, event.messageID);
+        return api.sendMessage("❌ Enter valid number (1–6).", event.threadID, event.messageID);
 
       const video = results[choice - 1];
+      const apiBase = String(global.GoatBot.config.Arafat?.api || "").trim();
 
-      const apiURL = `${BASE_API}/song?url=${encodeURIComponent(video.url)}`;
+      if (!apiBase)
+        return api.sendMessage("❌ Error: API Base URL is empty!", event.threadID, event.messageID);
 
-      let response, attempts = 0;
+      const finalURL = `${apiBase}/download/arafatadl?url=${encodeURIComponent(video.url)}`;
 
-      while (attempts < 15) {
-        response = await axios.get(apiURL);
-        if (response.data.link && response.data.error === false) break;
+      api.setMessageReaction("🌷", event.messageID, () => {}, true);
 
-        attempts++;
-        await new Promise(r => setTimeout(r, 1500));
-      }
+      const res = await axios({
+        url: finalURL,
+        method: "GET",
+        responseType: "stream",
+        timeout: 0
+      });
 
-      if (!response.data.link)
-        return api.sendMessage("𝑺𝒐𝒏𝒈 𝒏𝒐𝒕 𝒓𝒆𝒂𝒅𝒚. 𝑻𝒓𝒚 𝒂𝒈𝒂𝒊𝒏.", event.threadID, event.messageID);
-
-      const fileName = "audio.mp3";
-      await downloadFile(response.data.link, fileName);
+      if (res.status !== 200)
+        return api.sendMessage("❌ Download failed.", event.threadID, event.messageID);
 
       await api.unsendMessage(Reply.messageID);
 
-      api.sendMessage(
+      await api.sendMessage(
         {
-          body: `🎧 𝑫𝒐𝒘𝒏𝒍𝒐𝒂𝒅𝒆𝒅:\n${response.data.title}`,
-          attachment: fs.createReadStream(fileName)
+          body:
+`╭───────────────❍
+│ 🎧 𝑫𝒐𝒘𝒏𝒍𝒐𝒂𝒅 𝑺𝒖𝒄𝒄𝒆𝒔𝒔
+├───────────────❍
+│ 🎵 ${video.title}
+╰───────────────❍`,
+          attachment: res.data
         },
         event.threadID,
-        () => fs.unlinkSync(fileName),
+        () => api.setMessageReaction("🎀", event.messageID, () => {}, true),
         event.messageID
       );
 
     } catch (err) {
-      api.sendMessage("𝑭𝒂𝒊𝒍𝒆𝒅 𝒕𝒐 𝒇𝒆𝒕𝒄𝒉 𝒂𝒖𝒅𝒊𝒐.", event.threadID, event.messageID);
+      console.log("REPLY ERROR:", err.message);
+      api.sendMessage(`❌ Download failed. Reason: ${err.message}`, event.threadID, event.messageID);
     }
   }
 };
