@@ -12,7 +12,7 @@
   "antiInbox": false,
   "language": "en",
   "notesLanguage": "change to your language with ISO 639-1 code, available languages: vi (Vietnamese), en (English)",
-  "nickNameBot": "Bot name",
+  "nickNameBot": "FYNEX",
   "prefix": "/",
   "adminOnly": {
     "enable": false,
